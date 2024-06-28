@@ -7,6 +7,9 @@ import api.data.CardTypeData;
 import api.data.DeckData;
 import api.data.PlayerData;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -258,6 +261,27 @@ public class NetworkAgentTraining_1 implements ActionController {
         }
 
         private boolean loadModel(String modelFilePath) {
+            Path parentDirPath = Paths.get(modelFilePath).getParent();
+
+            if (parentDirPath != null) {
+                File parentDir = parentDirPath.toFile();
+
+                // Check if the parent directory exists, create it if not
+                if (!parentDir.exists()) {
+                    try {
+                        Files.createDirectories(parentDirPath);
+                        System.out.println("Created directory: " + parentDirPath);
+                    } catch (IOException e) {
+                        System.err.println("Failed to create directory: " + parentDirPath);
+                        e.printStackTrace();
+                        return false;
+                    }
+                }
+            } else {
+                System.err.println("Invalid model file path: " + modelFilePath);
+                return false;
+            }
+
             File modelFile = new File(modelFilePath);
 
             // Create file if it does not exist
