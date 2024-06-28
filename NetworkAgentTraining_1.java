@@ -27,6 +27,7 @@ public class NetworkAgentTraining_1 implements ActionController {
     private static final int INPUT_SIZE = 5;
     private static final int HIDDEN_SIZE = 10;
     private static final int OUTPUT_SIZE = 1;
+    private static final double LEARNING_RATE = 0.01;
 
     private final String buyModelFilePath = "src/main/java/api/agent/NN/buy_model.txt";
     private final NeuralNetwork buyNeuralNetwork;
@@ -228,7 +229,6 @@ public class NetworkAgentTraining_1 implements ActionController {
         }
 
         private void updateWeights(double[] inputs, double target, double output) {
-            double learningRate = 0.01; // Set your learning rate
 
             double[] hiddenLayer = new double[HIDDEN_SIZE];
             for (int i = 0; i < HIDDEN_SIZE; i++) {
@@ -236,26 +236,26 @@ public class NetworkAgentTraining_1 implements ActionController {
                 for (int j = 0; j < INPUT_SIZE; j++) {
                     hiddenLayer[i] += inputs[j] * inputWeights[i * INPUT_SIZE + j];
                 }
-                hiddenLayer[i] = Math.max(0, hiddenLayer[i]); // ReLU activation
+                hiddenLayer[i] = Math.max(0, hiddenLayer[i]); // ReLU
             }
 
             double error = target - output;
 
             // Update output layer weights
             for (int i = 0; i < HIDDEN_SIZE; i++) {
-                hiddenWeights[i] += learningRate * error * hiddenLayer[i];
+                hiddenWeights[i] += LEARNING_RATE * error * hiddenLayer[i];
             }
-            outputBias += learningRate * error;
+            outputBias += LEARNING_RATE * error;
 
             // Update hidden layer weights
             for (int i = 0; i < HIDDEN_SIZE; i++) {
                 for (int j = 0; j < INPUT_SIZE; j++) {
                     if (hiddenLayer[i] > 0) { // activation func
-                        inputWeights[i * INPUT_SIZE + j] += learningRate * error * hiddenWeights[i] * inputs[j];
+                        inputWeights[i * INPUT_SIZE + j] += LEARNING_RATE * error * hiddenWeights[i] * inputs[j];
                     }
                 }
                 if (hiddenLayer[i] > 0) { // activation func
-                    hiddenBias += learningRate * error * hiddenWeights[i];
+                    hiddenBias += LEARNING_RATE * error * hiddenWeights[i];
                 }
             }
         }
