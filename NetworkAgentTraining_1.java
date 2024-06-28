@@ -28,7 +28,7 @@ public class NetworkAgentTraining_1 implements ActionController {
     private static final int HIDDEN_SIZE = 10;
     private static final int OUTPUT_SIZE = 1;
 
-    private final String buyModelFilePath = "C:\\Users\\matth\\Documents\\mas-competition-student-engine\\src\\main\\java\\api\\agent\\NN\\buy_model.txt";
+    private final String buyModelFilePath = "src/main/java/api/agent/NN/buy_model.txt";
     private final NeuralNetwork buyNeuralNetwork;
 
     public NetworkAgentTraining_1() {
