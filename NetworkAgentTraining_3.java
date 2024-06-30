@@ -2,10 +2,8 @@ package api.agent;
 
 import api.KingdomAPI;
 import api.PlayerAPI;
-import api.data.CardData;
-import api.data.CardTypeData;
-import api.data.DeckData;
-import api.data.PlayerData;
+import api.RoundAPI;
+import api.data.*;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -18,20 +16,21 @@ import java.util.*;
  * These weights and biases are updated by playing lots of games
  * The deployed agent can then use these
  */
-public class NetworkAgentTraining_2 implements ActionController {
+public class NetworkAgentTraining_3 implements ActionController {
 
-    private static final int INPUT_SIZE = 5;
-    private static final int HIDDEN_SIZE = 10;
+//    This one will consider actions, buys, coins, supply avaliable, amount in player, amount in play, amount in opponenet
+    private static final int INPUT_SIZE = 9;
     private static final int OUTPUT_SIZE = 1;
+    private static final int HIDDEN_SIZE = 30;
     private static final double LEARNING_RATE = 0.01;
-    private static final double DISCOUNT_FACTOR = 0.9;
+    private static final double DISCOUNT_FACTOR = 0.95;
     private static final double INITIAL_EPSILON = 0.1;
 
-    private final String buyModelFilePath = "src/main/java/api/agent/NN/buy_model_monte_carlo.txt";
+    private final String buyModelFilePath = "src/main/java/api/agent/NN/buy_model_monte_carlo_9.txt";
     private final MonteCarloNeuralNetwork buyNeuralNetwork;
     private double epsilon = INITIAL_EPSILON;
 
-    public NetworkAgentTraining_2() {
+    public NetworkAgentTraining_3() {
         buyNeuralNetwork = new MonteCarloNeuralNetwork();
         if (!buyNeuralNetwork.loadModel(buyModelFilePath)) {
             buyNeuralNetwork.initializeWeights();
@@ -47,14 +46,35 @@ public class NetworkAgentTraining_2 implements ActionController {
     }
 
     private double evaluationFunction(CardData card) {
-        PlayerData myData = PlayerAPI.getMe(this);
-        DeckData myDeck = myData.getDeckData();
+        PlayerData currentPlayer = PlayerAPI.getMe(this);
+        double currentPlayerEvaluation = evaluatePlayer(currentPlayer, card);
+
+        List<PlayerData> allPlayers = PlayerAPI.getPlayers();
+        double maxOtherPlayerEvaluation = Double.NEGATIVE_INFINITY;
+
+        for (PlayerData player : allPlayers) {
+            if (!player.equals(currentPlayer)) {
+                double playerEvaluation = evaluatePlayer(player, null);
+                if (playerEvaluation > maxOtherPlayerEvaluation) {
+                    maxOtherPlayerEvaluation = playerEvaluation;
+                }
+            }
+        }
+
+        double baseScore = currentPlayerEvaluation - maxOtherPlayerEvaluation;
+
+        return baseScore;
+    }
+
+    private double evaluatePlayer(PlayerData player, CardData card) {
+        DeckData myDeck = player.getDeckData();
 
         int totalVictoryPoints = 0;
         int totalActions = 0;
         int totalBuys = 0;
         int totalMoney = 0;
         int totalDrawCount = 0;
+        int totalCost = 0;
 
         for (CardData deckCard : myDeck.getCardList()) {
             totalVictoryPoints += deckCard.getVictoryPoints();
@@ -62,6 +82,7 @@ public class NetworkAgentTraining_2 implements ActionController {
             totalBuys += deckCard.getBuys();
             totalMoney += deckCard.getMoney();
             totalDrawCount += deckCard.getDrawCount();
+            totalCost += deckCard.getCost();
         }
 
         if (card != null) {
@@ -70,54 +91,148 @@ public class NetworkAgentTraining_2 implements ActionController {
             totalBuys += card.getBuys();
             totalMoney += card.getMoney();
             totalDrawCount += card.getDrawCount();
+            totalCost += card.getCost();
         }
 
-        double baseScore = totalVictoryPoints * 2.0 +
-                totalActions * 0.5 +
-                totalBuys * 3.0 +
-                totalMoney * 2.0 +
-                totalDrawCount * 0.1;
+        double baseScore = totalVictoryPoints * 1.0 +
+                totalActions * 0.2 +
+                totalBuys * 0.7 +
+                totalMoney * 0.7 +
+                totalDrawCount * 0.1 +
+                totalCost * 0.8;
 
 
-        int orderInPlayerRankings = myData.getOrder();
-        double rankFactor = 0.5 * (1.0 / orderInPlayerRankings);
+//        int orderInPlayerRankings = player.getOrder();
+//        double rankFactor = 0.5 * (1.0 / orderInPlayerRankings);
+//        double scaledScore = baseScore * rankFactor;
 
-        return baseScore * rankFactor;
+//        TODO change objective function to consider other players?
+//        TODO potentially scale score?
 
-////        Other player external data
-//        List<PlayerData> allPlayers = PlayerAPI.getPlayers();
-//        int depletedCount = KingdomAPI.getDepletedCount();
-//        double averageVictoryPoints = allPlayers.stream().mapToInt(PlayerData::getPoints).average().orElse(0.0);
-//
-//        double averageAdjustment = 0.0;
-//        if (totalVictoryPoints < averageVictoryPoints) {
-//            averageAdjustment = (averageVictoryPoints - totalVictoryPoints) * 0.1;
-//        }
-//
-//        double depletionPenalty = 0.0;
-//        if (depletedCount > 3) {
-//            depletionPenalty = depletedCount * 0.5;
-//        }
-//
-//        return baseScore - rankAdjustment - averageAdjustment - depletionPenalty;
+        return baseScore;
+    }
 
+
+        private int getTotalInOpponentsHandsHelper(CardName card) {
+        int count = 0;
+        for (PlayerData player : PlayerAPI.getPlayers()) {
+            for (CardData playerCard : player.getDeckData().getCardList()) {
+                if (playerCard.getName() == card) {
+                    count += 1;
+                }
+            }
+        }
+        return count;
+    }
+
+    private int findMaxAttribute(PlayerData player, String attributeName) {
+        List<CardData> playerDeck = player.getDeckData().getCardList();
+        List<CardData> kingdomCards = KingdomAPI.getAvailableCards();
+
+        int maxFromPlayerDeck = getMaxAttributeValue(playerDeck, attributeName);
+        int maxFromKingdomCards = getMaxAttributeValue(kingdomCards, attributeName);
+
+        return Math.max(maxFromPlayerDeck, maxFromKingdomCards);
+    }
+
+    private int getMaxAttributeValue(List<CardData> cards, String attributeName) {
+        int maxAttributeValue = 0;
+
+        for (CardData card : cards) {
+            int attributeValue = 0;
+
+            switch (attributeName) {
+                case "Actions":
+                    attributeValue = card.getActions();
+                    break;
+                case "Buys":
+                    attributeValue = card.getBuys();
+                    break;
+                case "Money":
+                    attributeValue = card.getMoney();
+                    break;
+                case "VictoryPoints":
+                    attributeValue = card.getVictoryPoints();
+                    break;
+                case "DrawCount":
+                    attributeValue = card.getDrawCount();
+                    break;
+                case "Cost":
+                    attributeValue = card.getCost();
+                default:
+                    // Handle default case or throw exception if necessary
+                    break;
+            }
+
+            if (attributeValue > maxAttributeValue) {
+                maxAttributeValue = attributeValue;
+            }
+        }
+
+        return maxAttributeValue;
+    }
+
+    private double[] getScaledInputs(CardData card) {
+        int maxActions = findMaxAttribute(PlayerAPI.getMe(this), "Actions");
+        int maxBuys = findMaxAttribute(PlayerAPI.getMe(this), "Buys");
+        int maxMoney = findMaxAttribute(PlayerAPI.getMe(this), "Money");
+        int maxVictoryPoints = findMaxAttribute(PlayerAPI.getMe(this), "VictoryPoints");
+        int maxDrawCount = findMaxAttribute(PlayerAPI.getMe(this), "DrawCount");
+        int maxDrawCost = findMaxAttribute(PlayerAPI.getMe(this), "Cost");
+        double maxRound = 30.0;
+
+        int maxCardsRemaining;
+        switch (card.getName().getDisplayName()) {
+            case "Copper":
+                maxCardsRemaining = 60 - 7 * 4;
+                break;
+            case "Curse":
+                maxCardsRemaining = (4 - 1) * 10;
+                break;
+            case "Silver":
+                maxCardsRemaining = 40;
+                break;
+            case "Gold":
+                maxCardsRemaining = 30;
+                break;
+            case "Estate":
+                maxCardsRemaining = 24;
+                break;
+            case "Duchy":
+            case "Province":
+                maxCardsRemaining = 12;
+                break;
+            default:
+                maxCardsRemaining = 10;
+                break;
+        }
+        double[] scaledInputs = {
+                card.getActions() / (double) maxActions,
+                card.getBuys() / (double) maxBuys,
+                card.getMoney() / (double) maxMoney,
+                card.getVictoryPoints() / (double) maxVictoryPoints,
+                card.getDrawCount() / (double) maxDrawCount,
+                card.getCost() / (double) maxDrawCost,
+                KingdomAPI.getCardCountRemaining(card.getName()) / (double) maxCardsRemaining,
+                getTotalInOpponentsHandsHelper(card.getName()) / (double) maxCardsRemaining,
+                Math.min(RoundAPI.getRoundNumber(), maxRound) / maxRound
+        };
+
+        return scaledInputs;
     }
 
     public CardData hookImpl(List<CardData> options, MonteCarloNeuralNetwork NN) {
+
         double initialScore = evaluationFunction();
         CardData bestCard = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         double[] bestInputs = null;
 
         for (CardData card : options) {
-            double[] inputs = {
-                    card.getActions(),
-                    card.getBuys(),
-                    card.getMoney(),
-                    card.getVictoryPoints(),
-                    card.getDrawCount()
-            };
+            double[] inputs = getScaledInputs(card);
             double score = NN.evaluateCard(inputs);
+//            System.out.println("scaled inputs " + Arrays.toString(inputs));
+//            System.out.println("score " + score);
             if (score > bestScore) {
                 bestScore = score;
                 bestCard = card;
@@ -126,8 +241,13 @@ public class NetworkAgentTraining_2 implements ActionController {
         }
 
         double finalScore = evaluationFunction(bestCard);
-
         double reward = finalScore - initialScore;
+
+//        System.out.println("Chose " + bestCard.getName().getDisplayName());
+//        System.out.println("best score " + bestScore);
+//        System.out.println("final score " + finalScore);
+
+
         NN.updateQValues(bestInputs, reward, bestScore);
 
         return bestCard;
@@ -207,14 +327,20 @@ public class NetworkAgentTraining_2 implements ActionController {
         private void updateQValues(double[] inputs, double reward, double output) {
             String stateActionKey = Arrays.toString(inputs);
             double qValue = qValues.getOrDefault(stateActionKey, 0.0);
-            qValue = qValue + LEARNING_RATE * (reward + DISCOUNT_FACTOR * output - qValue);
+
+            // Update Q-value based on Q-learning formula
+            double target = reward + DISCOUNT_FACTOR * output;
+            qValue = qValue + LEARNING_RATE * (target - qValue);
+
             qValues.put(stateActionKey, qValue);
 
+            // Decay epsilon for exploration-exploitation trade-off
             if (new Random().nextDouble() < epsilon) {
                 epsilon *= 0.99;
             }
 
-            updateWeights(inputs, reward, output);
+            // Update neural network weights based on backpropagation
+            updateWeights(inputs, target, output);
         }
 
         private void updateWeights(double[] inputs, double target, double output) {
